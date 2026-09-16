@@ -876,6 +876,9 @@ def _build_slash_commands() -> dict[str, str]:
         "config": _("tui.slash_config"),
         "language": _("tui.slash_lang"),
         "wizard": _("tui.slash_wizard"),
+        # /experience, /learn and /feedback are classic-REPL only: they live in
+        # REPL_COMMANDS, not here, because _dispatch_slash has no handlers for
+        # them and would answer "Unknown command".
         "quit": _("tui.slash_quit"),
     }
 
@@ -893,13 +896,24 @@ def _build_repl_commands() -> dict[str, str]:
         "config": _("tui.slash_config"),
         "language": _("tui.slash_lang"),
         "wizard": _("tui.slash_wizard"),
+        # Permission-mode switcher for the execution gate (handler lives in
+        # main._run_repl_command). Distinct from the Textual-TUI /mode check
+        # depth (quick/standard/deep/continuous), hence its own label.
+        "mode": _("tui.slash_permission_mode"),
+        "experience": _("tui.slash_experience"),
+        "learn": _("tui.slash_learn"),
+        "feedback": _("tui.slash_feedback"),
     }
 
 
 REPL_COMMANDS: dict[str, str] = _build_repl_commands()
 
 # Short aliases → canonical classic-REPL command name.
-_REPL_COMMAND_ALIASES: dict[str, str] = {"cfg": "config", "lang": "language"}
+_REPL_COMMAND_ALIASES: dict[str, str] = {
+    "cfg": "config",
+    "lang": "language",
+    "exp": "experience",
+}
 
 
 def _resolve_repl_command(name: str) -> str:
@@ -2601,6 +2615,68 @@ def run_config_tui() -> None:
     _run_config_wizard()
 
 
+def _read_system_clipboard() -> str | None:
+    """Read the OS clipboard without a third-party dependency.
+
+    Returns ``None`` when the clipboard cannot be read, or an empty string when
+    it is readable but empty. Windows pipes a base64-encoded copy through
+    stdout (pure ASCII, immune to console codepages, never touches disk);
+    Unix tries the usual helpers.
+    """
+    if sys.platform == "win32":
+        # Base64 keeps the payload ASCII-safe regardless of console codepage,
+        # so pasted API keys never land in a temp file on disk.
+        ps = (
+            "$text = Get-Clipboard -Raw; if ($null -eq $text) { $text = '' }; "
+            "[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($text))"
+        )
+        try:
+            completed = subprocess.run(
+                [
+                    "powershell.exe",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-WindowStyle",
+                    "Hidden",
+                    "-Command",
+                    ps,
+                ],
+                check=False,
+                capture_output=True,
+                timeout=5,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if completed.returncode != 0:
+            return None
+        import base64
+
+        try:
+            return base64.b64decode(completed.stdout.strip()).decode("utf-8")
+        except (ValueError, UnicodeDecodeError):
+            return None
+
+    for command in (
+        ("pbpaste",),
+        ("wl-paste", "--no-newline"),
+        ("xclip", "-selection", "clipboard", "-o"),
+        ("xsel", "--clipboard", "--output"),
+    ):
+        try:
+            completed = subprocess.run(
+                command,
+                check=False,
+                capture_output=True,
+                timeout=5,
+            )
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if completed.returncode != 0:
+            continue
+        return completed.stdout.decode("utf-8", errors="replace")
+    return None
+
+
 def _run_config_panel() -> None:
     """Full-screen keyboard-navigable config panel."""
     import threading
@@ -2647,6 +2723,16 @@ def _run_config_panel() -> None:
             model.select_option(1)
         elif not model.editing:
             model.focus_next()
+
+    @kb.add("pageup")
+    def _pageup(event: Any) -> None:
+        if model.dropdown_open:
+            model.select_option(-model._dropdown_window_height())
+
+    @kb.add("pagedown")
+    def _pagedown(event: Any) -> None:
+        if model.dropdown_open:
+            model.select_option(model._dropdown_window_height())
 
     @kb.add("tab")
     def _tab(event: Any) -> None:
@@ -2755,6 +2841,19 @@ def _run_config_panel() -> None:
     def _backspace(event: Any) -> None:
         if model.editing:
             model.set_edit_text(model.edit_text[:-1])
+
+    @kb.add("c-v", eager=True)
+    def _ctrl_v(event: Any) -> None:
+        # Windows terminals often deliver Ctrl+V instead of bracketed paste.
+        # Read the system clipboard ourselves and feed the panel editor.
+        if model.editing:
+            model.apply_clipboard(_read_system_clipboard())
+
+    @kb.add("<bracketed-paste>", eager=True)
+    def _bracketed_paste(event: Any) -> None:
+        # Override the default Buffer paste so text lands in model.edit_text.
+        if model.editing:
+            model.paste_text(event.data)
 
     @kb.add("<any>")
     def _typed(event: Any) -> None:

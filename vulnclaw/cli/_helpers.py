@@ -26,6 +26,29 @@ TUI_EVENT_TOKEN_ENV = "VULNCLAW_TUI_EVENT_TOKEN"
 TUI_EVENT_PREFIX = "__VULNCLAW_TUI_EVENT__:"
 
 
+def format_llm_user_error(exc: BaseException) -> str:
+    """Turn provider exceptions into a short message for the REPL.
+
+    OpenRouter wraps upstream rate limits as ``Provider returned error`` with the
+    useful text buried in ``body['metadata']['raw']`` — surface that instead of
+    dumping the whole Error code blob after ``Thinking...``.
+    """
+    body = getattr(exc, "body", None)
+    if isinstance(body, Mapping):
+        meta = body.get("metadata")
+        if isinstance(meta, Mapping):
+            raw = str(meta.get("raw") or "").strip()
+            hint = str(meta.get("remedy_hint") or "").strip()
+            if raw:
+                return f"{raw}" + (f" ({hint})" if hint else "")
+        message = str(body.get("message") or "").strip()
+        code = body.get("code")
+        if message:
+            return f"{code}: {message}" if code is not None else message
+    text = str(exc).strip()
+    return text or type(exc).__name__
+
+
 @dataclass(frozen=True)
 class SubagentTuiEvent:
     kind: str
@@ -364,6 +387,9 @@ def _make_solve_event_printer(target_console: Console) -> Any:
             _print_styled_plain(target_console, _("cli.complete_rejected"), str(payload.get("reason", ""))[:90], style="red")
         elif kind == "ask_user":
             _print_styled_plain(target_console, _("cli.ask_user"), str(payload.get("question", ""))[:160], style="yellow")
+            last_reply = (payload.get("last_reply") or "").strip()
+            if last_reply:
+                _print_styled_plain(target_console, _("cli.last_reply"), last_reply[:200], style="dim")
         elif kind == "no_path":
             _print_styled_plain(target_console, _("cli.no_path"), str(payload.get("reason", ""))[:160], style="yellow")
         elif kind == "error":

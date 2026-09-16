@@ -8,7 +8,7 @@
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 [![OpenAI Compatible](https://img.shields.io/badge/API-OpenAI_Compatible-green)](https://platform.openai.com/)
 [![MCP](https://img.shields.io/badge/Toolchain-MCP-orange)](https://modelcontextprotocol.io/)
-[![PyPI](https://img.shields.io/badge/PyPI-v0.3.8-blueviolet)](https://pypi.org/project/vulnclaw/)
+[![PyPI](https://img.shields.io/badge/PyPI-v0.4.0-blueviolet)](https://pypi.org/project/vulnclaw/)
 [![codecov](https://codecov.io/gh/Netw0rkNoob/VulnClaw/branch/main/graph/badge.svg)](https://codecov.io/gh/Netw0rkNoob/VulnClaw)
 [![Security](https://img.shields.io/badge/Scope-Authorized_Only-red)](#-安全声明)
 [![Discord](https://img.shields.io/badge/Discord-Join_Community-5865F2?logo=discord&logoColor=white)](https://discord.gg/q5nrZpe6S)
@@ -24,8 +24,6 @@
 **本项目是可独立运行的 AI 渗透测试 Agent。**
 <br>
 项目官网：https://unclecheng-li.github.io/vulnclaw.com/
-<br>
-💬 **社区**: [加入我们的 Discord](https://discord.gg/q5nrZpe6S)
 <br>
 
 基于 LLM Agent + MCP 工具链 + 可选 Skill 参考资料，
@@ -54,7 +52,7 @@ VulnClaw 自动执行：
 
 <img width="1148" height="642" alt="image" src="https://github.com/user-attachments/assets/576e1cf6-25da-4969-864b-40e77d020dbf" />
 
-<img width="2530" height="1153" alt="image" src="https://github.com/user-attachments/assets/9be44035-2f9f-4760-8884-38c59caab3da" />
+<img width="2521" height="1300" alt="image" src="https://github.com/user-attachments/assets/9f8d62c1-8e19-4b25-a2c9-651338329e88" />
 
 适用于已授权的渗透测试、CTF 竞赛、安全教学、红队演练等场景。
 
@@ -139,7 +137,7 @@ vulnclaw config set llm.model your-model-name
 # 2. 设置 API Key
 vulnclaw config set llm.api_key sk-your-key-here
 #    — 或改用 ChatGPT 订阅登录（无需 API Key）：
-#      vulnclaw login   （浏览器登录；详见 docs/keyless-auth.md，注意 ToS 风险）
+#      vulnclaw login   （浏览器登录；注意 ToS 风险）
 
 # 3. 默认：打开原 CLI / REPL
 vulnclaw
@@ -266,6 +264,7 @@ vulnclaw
 | `status` | 查看当前状态 |
 | `tools` | 列出当前可用 MCP 工具 |
 | `think on/off` | 切换推理过程显示 |
+| `mode [模式]` | 查看或切换执行审批模式（ask / auto_review / full_access） |
 | `persistent` | 启动持续性渗透测试 |
 | `clear` | 清空当前会话 |
 | `help` | 显示帮助信息 |
@@ -282,6 +281,16 @@ vulnclaw tui
 vulnclaw tui --target https://target.example --mode quick --only-port 443
 vulnclaw tui --dry-run --target https://target.example --mode deep --only-path /admin
 ```
+
+Rust TUI 工作台支持可配置容器布局：左侧默认显示状态，右侧同时显示发现与子代理；中间显示代理输出，底部为输入框。子代理视图目前显示无数据提示。
+
+- 拖动视图标题，可在两个侧栏之间移动，或在栏内重新排序；橙色预览框显示松开后的模块位置与大小。点击标题左侧 `v` / `>` 折叠或展开。
+- 拖动容器或视图之间的分隔条调整尺寸；折叠视图需展开后再调高。拖动中按 Esc 取消。
+- 滚轮滚动鼠标下方的视图内容；点击聚焦后可用方向键滚动，`Ctrl+←/→` 切换视图，`Ctrl+Y` 复制当前视图。
+- 辅助侧栏清空后自动收起，中间区域填满剩余空间。拖动模块到工作区右缘可显示橙色停靠预览，松开后重新展开；主侧栏始终至少保留一个模块。
+- 布局自动保存到本地 `VULNCLAW_HOME/tui/layout.json`（默认 `~/.vulnclaw/tui/layout.json`），下次启动恢复。底栏随命令面板自动增高；终端过小时提示所需尺寸，放大后恢复布局。
+
+鼠标捕获开启时，终端原生文字选择取决于终端提供的修饰键；复制单个视图可使用 `Ctrl+Y`。
 
 常用菜单：
 - **菜单 3** — 设置测试范围（主机/端口/路径/允许动作/禁止动作）
@@ -401,7 +410,7 @@ FINAL 经过证据闸门校验 → 通过才结束，否则把拒绝原因返回
 | **MCP 编排** | `mcp/registry.py` + `lifecycle.py` + `router.py` | 服务注册 + 生命周期 + 工具路由 |
 | **配置管理** | `config/schema.py` + `settings.py` | Pydantic + YAML + 13 Provider 预设 |
 | **报告生成** | `report/generator.py` + `poc_builder.py` | Markdown 报告 + PoC 脚本 |
-| **安全知识库** | `kb/store.py` + `retriever.py` | JSON 存储 + CVE/技术/工具检索 |
+| **安全知识库** | `kb/store.py` + `retriever.py` + `ranking.py` | JSON 存储 + 中文感知 BM25 检索 + 可选重排序 |
 
 ---
 
@@ -571,6 +580,29 @@ vulnclaw config set session.max_rounds 30     # 设置最大轮数（默认 15�
 vulnclaw config set session.show_thinking false # 隐藏推理过程
 ```
 
+### 执行审批（免确认执行）
+
+危险工具（shell / python / PoC）每次执行前默认会弹出 `Approve this execution? [y/N]` 确认。三种调整方式：
+
+```bash
+# ① 永久写入配置（推荐）
+vulnclaw config set safety.permission_mode full_access
+
+# ② 仅当前 REPL 会话生效（重启后回到配置文件的模式）
+mode full_access          # 切换；不带参数则查看当前模式
+
+# ③ 单次运行生效
+VULNCLAW_SAFETY_PERMISSION_MODE=full_access vulnclaw solve <target>
+```
+
+| 模式 | 行为 |
+|------|------|
+| `ask`（默认） | 每次执行都询问 y/N，未响应 300 秒（`safety.approval_timeout_seconds`）自动拒绝 |
+| `auto_review` | 只读命令白名单（ls / cat / nmap 扫描类等）直接执行，其余仍询问；可用 `safety.trusted_commands` 扩充前缀 |
+| `full_access` | 全部直接执行，不再询问 |
+
+> ⚠️ `full_access` 下，渗透目标返回的页面、响应体、报告内容都属于不可信输入，提示注入可能驱动无确认的任意命令执行。仅建议在隔离靶场、CTF 或一次性虚拟机中使用；真实环境推荐 `auto_review` + 自定义信任前缀。
+
 ### 可配置项
 
 | 配置项 | 默认值 | 说明 |
@@ -606,6 +638,13 @@ vulnclaw config set session.show_thinking false # 隐藏推理过程
 | `session.persistent_max_cycles` | 10 | 持续性渗透最大周期数（0=无限） |
 | `session.persistent_auto_report` | true | 持续性渗透每周期自动生成报告 |
 | `session.stale_rounds_threshold` | 5 | 死循环检测阈值 |
+| `safety.permission_mode` | ask | 危险工具执行审批策略：`ask`（默认，每次执行需 y/N 确认）/ `auto_review`（只读命令白名单免确认，其余仍询问）/ `full_access`（全部直接执行，无确认） |
+| `safety.approval_timeout_seconds` | 300 | 未响应的执行审批等待多少秒后自动拒绝 |
+| `safety.trusted_commands` | 空 | `auto_review` 模式下的免审批命令前缀（如 `nmap`、`git diff`）；以禁用名开头的条目会被拒绝 |
+| `safety.enable_python_execute` | true | 启用 python_execute 内置工具（关闭更安全） |
+| `safety.python_execute_max_lines` | 50 | 单次 python_execute 允许的最大代码行数 |
+| `safety.python_execute_show_warning` | true | 每次 python_execute 前显示安全警告 |
+| `safety.python_execute_audit_enabled` | true | 将 python_execute 审计记录写入本地配置目录 |
 
 ### 环境变量
 
@@ -625,6 +664,9 @@ vulnclaw config set session.show_thinking false # 隐藏推理过程
 | `VULNCLAW_SESSION_ESCALATION_MAX_LEVEL` | Payload 升级上限（0-4） |
 | `VULNCLAW_SESSION_PLUGIN_RUNTIME_ENABLED` | 插件运行时开关 |
 | `VULNCLAW_SESSION_PLUGIN_MAX_REQUESTS_PER_TARGET` | 单目标插件请求预算 |
+| `VULNCLAW_SAFETY_PERMISSION_MODE` | 执行审批模式（ask / auto_review / full_access） |
+| `VULNCLAW_SAFETY_APPROVAL_TIMEOUT_SECONDS` | 执行审批等待秒数 |
+| `VULNCLAW_SAFETY_TRUSTED_COMMANDS` | auto_review 免审批命令前缀（逗号分隔） |
 
 优先级：**环境变量 > 配置文件 > 内置默认值**
 

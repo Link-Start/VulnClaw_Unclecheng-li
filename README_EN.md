@@ -8,7 +8,7 @@
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 [![OpenAI Compatible](https://img.shields.io/badge/API-OpenAI_Compatible-green)](https://platform.openai.com/)
 [![MCP](https://img.shields.io/badge/Toolchain-MCP-orange)](https://modelcontextprotocol.io/)
-[![PyPI](https://img.shields.io/badge/PyPI-v0.3.8-blueviolet)](https://pypi.org/project/vulnclaw/)
+[![PyPI](https://img.shields.io/badge/PyPI-v0.4.0-blueviolet)](https://pypi.org/project/vulnclaw/)
 [![codecov](https://codecov.io/gh/Netw0rkNoob/VulnClaw/branch/main/graph/badge.svg)](https://codecov.io/gh/Netw0rkNoob/VulnClaw)
 [![Security](https://img.shields.io/badge/Scope-Authorized_Only-red)](#-security-notice)
 [![Discord](https://img.shields.io/badge/Discord-Join_Community-5865F2?logo=discord&logoColor=white)](https://discord.gg/q5nrZpe6S)
@@ -24,8 +24,6 @@
 **This project is a standalone AI penetration testing Agent.**
 <br>
 Official Website: https://unclecheng-li.github.io/vulnclaw.com/
-<br>
-💬 **Community**: [Join our Discord](https://discord.gg/q5nrZpe6S)
 <br>
 
 Built on LLM Agent + MCP Toolchain + optional Skill reference material,
@@ -54,7 +52,7 @@ VulnClaw executes:
 
 <img width="1148" height="642" alt="image" src="https://github.com/user-attachments/assets/576e1cf6-25da-4969-864b-40e77d020dbf" />
 
-<img width="2530" height="1153" alt="image" src="https://github.com/user-attachments/assets/8825f92f-eb70-433d-89e4-eec313b6ec0c" />
+<img width="2521" height="1300" alt="image" src="https://github.com/user-attachments/assets/6a56867b-11b2-44d2-b32e-e576be2261d3" />
 
 Suitable for authorized pentests, CTF competitions, security training, and red team operations.
 
@@ -144,7 +142,7 @@ vulnclaw config set llm.model your-model-name
 # 2. Set API Key
 vulnclaw config set llm.api_key sk-your-key-here
 #    — or sign in with ChatGPT subscription (no API key needed):
-#      vulnclaw login   (browser sign-in; see docs/keyless-auth.md, note ToS caveat)
+#      vulnclaw login   (browser sign-in; note ToS caveat)
 
 # 3. Default: open the original CLI / REPL
 vulnclaw
@@ -271,6 +269,7 @@ No-args startup opens the 🦞 interactive shell for natural-language use:
 | `status` | View current state |
 | `tools` | List available MCP tools |
 | `think on/off` | Toggle thinking process display |
+| `mode [mode]` | Show or switch the execution approval mode (ask / auto_review / full_access) |
 | `persistent` | Start persistent pentesting |
 | `clear` | Clear current session |
 | `help` | Show help |
@@ -287,6 +286,16 @@ vulnclaw tui
 vulnclaw tui --target https://target.example --mode quick --only-port 443
 vulnclaw tui --dry-run --target https://target.example --mode deep --only-path /admin
 ```
+
+The Rust workbench has configurable containers: Status on the left, Findings and Subagents stacked on the right, agent output in the center, and an input area below. Subagent data is currently unavailable.
+
+- Drag a view title between sidebars or to reorder it. An orange preview shows the module's position and size after release; click `v` / `>` to collapse or expand.
+- Drag a separator to resize neighboring containers or expanded views. Press Esc during a drag to cancel.
+- The mouse wheel scrolls the view under the pointer. Click to focus, use arrow keys to scroll, `Ctrl+Left/Right` to cycle views, and `Ctrl+Y` to copy the focused view.
+- An empty secondary sidebar collapses automatically. Drag a view to the workbench's right edge for an orange docking preview, then release to reopen it. The primary sidebar always keeps at least one view.
+- Layout changes save automatically to `VULNCLAW_HOME/tui/layout.json` (default `~/.vulnclaw/tui/layout.json`). The command palette grows the input area automatically. Small terminals show the required dimensions and restore the layout when enlarged.
+
+Native text selection while mouse capture is active depends on your terminal's modifier keys; `Ctrl+Y` copies an individual view.
 
 Common menus:
 - **Menu 3** — Set testing scope (host/port/path/allowed actions/blocked actions)
@@ -410,7 +419,7 @@ FINAL passes evidence gate → accepted; otherwise the rejection is fed back and
 | **MCP Orchestration** | `mcp/registry.py` + `lifecycle.py` + `router.py` | Service registry + lifecycle + tool routing |
 | **Config** | `config/schema.py` + `settings.py` | Pydantic + YAML + 14 provider presets + SubagentConfig |
 | **Report Generator** | `report/generator.py` + `poc_builder.py` | Markdown reports + PoC scripts |
-| **Security KB** | `kb/store.py` + `retriever.py` | JSON storage + CVE/technique/tool retrieval |
+| **Security KB** | `kb/store.py` + `retriever.py` + `ranking.py` | JSON storage + Chinese-aware BM25 retrieval + optional reranking |
 
 ---
 
@@ -580,6 +589,29 @@ vulnclaw config set session.max_rounds 30     # set max rounds (default 15)
 vulnclaw config set session.show_thinking false  # hide thinking process
 ```
 
+### Execution Approvals (unattended execution)
+
+Dangerous tools (shell / python / PoC) prompt `Approve this execution? [y/N]` before every run by default. Three ways to change that:
+
+```bash
+# 1. Persist to config (recommended)
+vulnclaw config set safety.permission_mode full_access
+
+# 2. Current REPL session only (falls back to the config file after restart)
+mode full_access          # switch; without an argument, show the current mode
+
+# 3. Single run
+VULNCLAW_SAFETY_PERMISSION_MODE=full_access vulnclaw solve <target>
+```
+
+| Mode | Behavior |
+|------|----------|
+| `ask` (default) | Every execution prompts y/N; unanswered prompts auto-deny after 300 s (`safety.approval_timeout_seconds`) |
+| `auto_review` | Read-only allowlist commands (ls / cat / nmap scans, etc.) run unattended, everything else still prompts; extend via `safety.trusted_commands` prefixes |
+| `full_access` | Everything runs unattended, no prompts |
+
+> ⚠️ Under `full_access`, target responses, page content and reports are untrusted input — prompt injection can drive unconfirmed arbitrary command execution. Reserve it for isolated labs, CTFs and throwaway VMs; for real engagements prefer `auto_review` plus your own trusted prefixes.
+
 ### Configurable Options
 
 | Option | Default | Description |
@@ -630,6 +662,13 @@ vulnclaw config set session.show_thinking false  # hide thinking process
 | `session.persistent_max_cycles` | 10 | Max cycles (0=unlimited) |
 | `session.persistent_auto_report` | true | Auto-report after each cycle |
 | `session.stale_rounds_threshold` | 5 | Dead-loop detection threshold |
+| `safety.permission_mode` | ask | Execution approval policy for dangerous tools: `ask` (default, y/N per request), `auto_review` (read-only allowlist runs unattended, rest still prompt), `full_access` (everything runs, no prompts) |
+| `safety.approval_timeout_seconds` | 300 | How long an unanswered execution approval waits before auto-denying |
+| `safety.trusted_commands` | empty | auto_review prefixes that skip per-request approval (e.g. `nmap`, `git diff`); entries starting with a banned name are refused |
+| `safety.enable_python_execute` | true | Enable the python_execute built-in tool (disable for safer runs) |
+| `safety.python_execute_max_lines` | 50 | Max lines of code allowed per python_execute call |
+| `safety.python_execute_show_warning` | true | Show a security warning before each python_execute invocation |
+| `safety.python_execute_audit_enabled` | true | Write python_execute audit records to the local config directory |
 
 ### Environment Variables
 
@@ -649,6 +688,9 @@ vulnclaw config set session.show_thinking false  # hide thinking process
 | `VULNCLAW_SESSION_ESCALATION_MAX_LEVEL` | Payload escalation cap (0-4) |
 | `VULNCLAW_SESSION_PLUGIN_RUNTIME_ENABLED` | Plugin runtime toggle |
 | `VULNCLAW_SESSION_PLUGIN_MAX_REQUESTS_PER_TARGET` | Per-target plugin request budget |
+| `VULNCLAW_SAFETY_PERMISSION_MODE` | Execution approval mode (ask / auto_review / full_access) |
+| `VULNCLAW_SAFETY_APPROVAL_TIMEOUT_SECONDS` | Execution approval wait seconds |
+| `VULNCLAW_SAFETY_TRUSTED_COMMANDS` | auto_review trusted command prefixes (comma-separated) |
 | `VULNCLAW_SUBAGENT_ENABLED` | Sub-agent fan-out toggle |
 | `VULNCLAW_SUBAGENT_MAX_BACKGROUND_GROUPS` | Max concurrent sub-agent groups per solve turn |
 | `VULNCLAW_SUBAGENT_MAX_CONCURRENT_LEAF_TOTAL` | Max concurrent leaf agents across all groups |
